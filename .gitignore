@@ -1,0 +1,12 @@
+# data
+data
+
+# files
+checkpoints
+*.pyc
+*.swp
+*.tgz
+*.pkl
+*.ckpt
+*.zip
+*.tgz.gz
