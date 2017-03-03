@@ -1,6 +1,7 @@
 # RETAIN
 
-This repository contaiins the codes presented in following paper: \\
+This repository contaiins the codes presented in following paper:
+
 [RETAIN: Interpretable Predictive Model in Healthcare using Reverse Time Attention Mechanism](https://arxiv.org/pdf/1608.05745.pdf)
 
 Original code for this paper is:
