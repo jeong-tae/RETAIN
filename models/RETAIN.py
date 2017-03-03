@@ -27,42 +27,37 @@ class RETAIN(base):
             v = tf.matmul(self.X[:, i, :], W_emb)
             v = tf.reshape(v, [-1, 1, self.m_dim])
             v_i.append(v)
-        v_i = tf.concat(1, v_i)
+        v_i = tf.concat(v_i, axis = 1)
 
         rnn_alpha = self.new_cell(self.p_dim, 'lstm', is_tuple = True)
         # set RNN layer to improve, such as stacking the layer, Dropout, ...
 
+        reverse_v = tf.reverse(v_i, dims = [False, True, False])
+
+        """
         reverse_v = []
         for i in range(self.n_steps, 0, -1):
             reverse_v.append(v_i[:, i-1, :])
         reverse_v = tf.concat(1, reverse_v)
+        """
 
         reverse_g_i, alpha_states = tf.nn.dynamic_rnn(rnn_alpha, reverse_v, sequence_length=self.length(self.X), scope = 'rnn_alpha')
 
+        g_i = tf.reverse(reverse_g_i, dims = [False, True, False])
+        
+        """
         g_i = []
         for i in range(self.n_steps, 0, -1):
             g_i.append(reverse_g_i[:, i-1, :])
         g_i = tf.concat(1, g_i)
+        """
 
-        """
-        alpha_state = rnn_alpha.zero_state(self.batch_size, tf.float32)
-        # first state for RNN sequence. if there is alternative, use it
-        g_i = []
-        with tf.variable_scope("rnn_alpha"):
-            for i in range(self.n_steps):
-                if i > 0: tf.get_variable_scope().reuse_variables()
-                g, alpha_state = rnn_alpha(v_i[:, i, :], alpha_state)
-                # need to be reverse order
-                g = tf.reshape(g, [-1, 1, self.p_dim])
-                # we can use 'alpha_state' instead of 'g' to take attention, but we don't know which is better
-                g_i.append(g)
-        g_i = tf.concat(1, g_i)
-        """
-            
+        # attention parameter to learn
         with tf.variable_scope('alpha'):
             W_alpha = tf.get_variable('weight', shape = [self.p_dim, 1])
             b_alpha = tf.get_variable('bias', shape = [1])
         
+        # attention
         e_j = []
         for j in range(self.n_steps):
             e = tf.matmul(g_i[:, j, :], W_alpha) + b_alpha
@@ -74,23 +69,12 @@ class RETAIN(base):
 
         reverse_h_i, beta_states = tf.nn.dynamic_rnn(rnn_beta, reverse_v, sequence_length=self.length(self.X), scope = 'rnn_beta')
 
+        h_i = tf.reverse(reverse_h_i, dims = [False, True, False])
+
+        """
         h_i = []
         for i in range(self.n_steps, 0, -1):
             h_i.append(reverse_h_i[:, i-1, :])
-        h_i = tf.concat(1, h_i)
-
-        """
-        beta_state = rnn_beta.zero_state(self.batch_size, tf.float32)
-        #
-        h_i = []
-        with tf.variable_scope("rnn_beta"):
-            for i in range(self.n_steps):
-                if i > 0: tf.get_variable_scope().reuse_variables()
-                h, beta_state = rnn_beta(v_i[:, i, :], beta_state)
-                # need to be reverse order
-                h = tf.reshape(h, [-1, 1, self.q_dim])
-                #
-                h_i.append(h)
         h_i = tf.concat(1, h_i)
         """
 
@@ -103,20 +87,20 @@ class RETAIN(base):
             beta = tf.tanh(tf.matmul(h_i[:, j, :], W_beta) + b_beta)
             beta = tf.reshape(beta, [-1, 1, self.m_dim])
             beta_j.append(beta)
-        beta_j = tf.concat(1, beta_j)
+        beta_j = tf.concat(beta_j, axis = 1)
 
         c_i = []
         for i in range(self.n_steps):
             alpha_beta_v = []
             for j in range(i+1):
-                attention = tf.multiply(alpha[:, j],tf.multiply(beta_j[:, j, :], alpha_i[:, j, :]))
+                attention = alpha_i[:, j] * tf.multiply(beta_j[:, j, :], v_i[:, j, :])
                 attention = tf.reshape(attention, [-1, 1, self.m_dim])
                 alpha_beta_v.append(attetion)
-            alpha_beta_v = tf.concat(1, alpha_beta_v)
+            alpha_beta_v = tf.concat(alpha_beta_v, axis = 1)
             c = tf.reduce_sum(alpha_beta_v, reduction_indices = 1)
             c = tf.reshape(c, [-1, 1, self.m_dim])
             c_i.append(c)
-        c_i = tf.concat(1, c_i)
+        c_i = tf.concat(c_i, axis = 1)
 
         with tf.variable_scope('logit'):
             W_logit = tf.get_variable('weight', shape = [self.m_dim, self.target_dim])
@@ -125,6 +109,15 @@ class RETAIN(base):
         c_i_flat = tf.reshape(c_i, [-1, self.m_dim])
         self.logits_flat = tf.batch_matmul(c_i_flat, W_logit)
         self.y_hat_i = tf.reshape(tf.nn.softmax(self.logits), [-1, self.n_steps, self.target_dim])
+
+        contributions = []
+        for i in range(self.n_steps):
+            coef = alpha_i[:, j] * tf.matmul(tf.transpose(W_logit), tf.multiply(beta_j[:, j, :], tf.transpose(W_emb)))
+            coef = tf.reshape(coef, [-1, 1, self.target_dim, self.input_dim])
+            contributions.append(coef)
+        contributions = tf.concat(contributions, axis = 1)
+        # if you want to see i'th visit, c'th disease of contribution
+        # then use contribution[:, i, c, :].
         
     def optimization(self):
         if self.Y_is_onehot == True:
