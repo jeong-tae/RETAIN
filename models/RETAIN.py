@@ -107,7 +107,7 @@ class RETAIN(base):
             b_logit = tf.get_variable('bias', shape = [self.target_dim])
 
         c_i_flat = tf.reshape(c_i, [-1, self.m_dim])
-        self.logits_flat = tf.batch_matmul(c_i_flat, W_logit)
+        self.logits_flat = tf.batch_matmul(c_i_flat, W_logit) + b_logit
         self.y_hat_i = tf.reshape(tf.nn.softmax(self.logits), [-1, self.n_steps, self.target_dim])
 
         contributions = []
